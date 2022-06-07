@@ -10,6 +10,16 @@ db = DatabaseConnector('zadacha.db')
 
 
 def filter_country_data(country_df: pd.DataFrame, year: Union[str, Iterable[str]] = '2020') -> pd.DataFrame:
+    """
+    Get from the country population data the ones that do not
+    start from OWID and correspond the requested year
+    :param country_df: DataFrame
+    The dataframe that needs to be filtered
+    :param year: str or List of str
+    Years that needs to be returned, 2020 by default
+    :return: DataFrame
+    Filtered dataframe
+    """
     if isinstance(year, str):
         required_fields = ['Country Code', year]
     elif isinstance(year, Iterable):
@@ -20,21 +30,47 @@ def filter_country_data(country_df: pd.DataFrame, year: Union[str, Iterable[str]
 
 
 def get_latest_vaccination(vaccination_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filters vaccination DataFrame to use latest date of data collected
+    :param vaccination_df: DataFrame
+    Data that needs to be filtered
+    :return: DataFrame
+    Filtered data
+    """
     grouped_vaccination = vaccination_df.groupby("iso_code")['date'].max().reset_index()
     grouped_vaccination = grouped_vaccination.rename(columns={'date': 'max_date'})
     vaccination_df = pd.merge(vaccination_df, grouped_vaccination, how='left', on=['iso_code'])
     return vaccination_df.loc[vaccination_df['date'] == vaccination_df['max_date']].reset_index(drop=True)
 
 
-def process_vaccination(vaccination_df: pd.DataFrame, country_population_df: pd.DataFrame) -> pd.DataFrame:
+def process_vaccination(vaccination_df: pd.DataFrame, country_population_df: pd.DataFrame,
+                        year: str = '2020') -> pd.DataFrame:
+    """
+    Function to merge the vaccination data with country population and calculate the
+    percentage of vaccination
+    :param vaccination_df: DataFrame
+    Vaccination data
+    :param country_population_df: DataFrame
+    Filtered country population data
+    :param year: str
+    Year of population that needs to be merged
+    :return:
+    """
     df = pd.merge(vaccination_df, country_population_df, left_on=['iso_code'], right_on=['Country Code'])
     df = df.fillna(0)
-    df['percentage_vaccinated'] = 100 * df['people_fully_vaccinated'] / df['2020']
-    df = df.rename(columns={'2020': 'population'})
+    df['percentage_vaccinated'] = 100 * df['people_fully_vaccinated'] / df[year]
+    df = df.rename(columns={year: 'population'})
     return df
 
 
 def update_country_date(country_series: pd.Series) -> None:
+    """
+    Function to upsert calculated vaccination data (inserts if there is no
+    country in database, updates the data otherwise)
+    :param country_series: Series
+    Processed vaccination data
+    :return: None
+    """
     country_data = db.query(f"""
         SELECT * FROM countries
         WHERE iso_code = '{country_series["iso_code"]}'
